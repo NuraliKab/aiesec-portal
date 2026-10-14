@@ -1,0 +1,7 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_PASSWORD: aiesec_password
+    ports:
+      - "5432:5432"
