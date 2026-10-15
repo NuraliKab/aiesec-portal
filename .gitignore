@@ -229,3 +229,17 @@ dist-ssr/
 .venv/
 __pycache__/
 *.py[cod]
+
+# Frontend Build & Package Logs
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+*.tsbuildinfo
+
+# Local Data Dumps (ETL)
+*.xlsx
+*.csv
+
+# Operating System Metadata
+.DS_Store
+Thumbs.db
