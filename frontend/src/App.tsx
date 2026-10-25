@@ -1,30 +1,11 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import rawProjectsData from "./data/projects.json";
+import type { Project } from "./types/project";
 
 // ==============================================================================
 // TYPE CONTRACT (Strict boundary aligned with Python ETL output)
 // ==============================================================================
-export interface Project {
-  ID?: string;
-  COUNTRY?: string;
-  PROJECT?: string;
-  "OPPORTUNITY LINK"?: string | null;
-  PROVIDER?: string | null;
-  "JOB DESCRIPTION"?: string | null;
-  BOOKLET?: string | null;
-  ACCOMMODATION?: string | null;
-  MEALS?: string | number | null;
-  TRANSPORTATION?: string | null;
-  FEE?: string | number | null;
-  DURATION?: string | null;
-  TIMELINE?: string | null;
-  REQUIREMENTS?: string | null;
-  // Normalized primitives injected by Python ETL
-  SDG?: number | null;
-  FEE_NUMERIC?: number | null;
-  DURATION_WEEKS?: number | null;
-  ACCOMMODATION_BOOL?: boolean;
-}
+export type { Project };
 
 const SDG_LABELS: Record<number, string> = {
   3: "Good Health & Well-Being",
@@ -39,13 +20,43 @@ const SDG_LABELS: Record<number, string> = {
   17: "Partnerships for the Goals",
 };
 
+// Defensive fee resolver helper: normalized ETL float -> raw numeric cell -> regex over string
+const getProjectFee = (p: Project): number | null => {
+  if (typeof p.FEE_NUMERIC === "number") return p.FEE_NUMERIC;
+  if (typeof p.FEE === "number") return p.FEE;
+  if (p.FEE) {
+    const match = String(p.FEE).match(/(\d+(?:[.,]\d+)?)/);
+    if (match) return parseFloat(match[1].replace(",", "."));
+  }
+  return null;
+};
+
+// Format ISO date strings (e.g. "2026-03-01T00:00:00") into readable dates while preserving free text
+const formatTimeline = (raw: string | number | null | undefined): string | null => {
+  const str = String(raw ?? "").trim();
+  if (!str) return null;
+  const isoMatch = str.match(/^(\d{4})-(\d{2})-(\d{2})(?:T00:00:00)?$/);
+  if (isoMatch) {
+    const dateObj = new Date(`${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}T00:00:00Z`);
+    if (!Number.isNaN(dateObj.getTime())) {
+      return dateObj.toLocaleDateString("en-GB", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+        timeZone: "UTC",
+      });
+    }
+  }
+  return str;
+};
+
 export default function App() {
-  // Phase 1: Ingest JSON defensively
+  // phase 1: ingest JSON defensively
   const allProjects: Project[] = useMemo(() => {
     return Array.isArray(rawProjectsData) ? (rawProjectsData as Project[]) : [];
   }, []);
 
-  // Phase 2: Compute dataset boundaries for dynamic filter bounds
+  // phase 2: compute dataset boundaries for dynamic filter bounds
   const { countries, sdgs, durations, maxFeeDetected } = useMemo(() => {
     const countrySet = new Set<string>();
     const sdgSet = new Set<number>();
@@ -56,18 +67,20 @@ export default function App() {
       if (p.COUNTRY) countrySet.add(p.COUNTRY);
       if (p.SDG !== null && p.SDG !== undefined) sdgSet.add(p.SDG);
       if (p.DURATION_WEEKS) durationSet.add(p.DURATION_WEEKS);
-      if (p.FEE_NUMERIC && p.FEE_NUMERIC > maxFee) maxFee = p.FEE_NUMERIC;
+      const fee = getProjectFee(p);
+      if (fee !== null && fee > maxFee) maxFee = fee;
     }
 
     return {
       countries: Array.from(countrySet).sort(),
       sdgs: Array.from(sdgSet).sort((a, b) => a - b),
       durations: Array.from(durationSet).sort((a, b) => a - b),
-      maxFeeDetected: Math.ceil(maxFee) || 250,
+      // align ceiling to step=5 so the range thumb can reach the maximum project fee
+      maxFeeDetected: maxFee > 0 ? Math.ceil(maxFee / 5) * 5 : 250,
     };
   }, [allProjects]);
 
-  // Phase 3: Filter & Sort States
+  // phase 3: filter & sort states
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [selectedCountry, setSelectedCountry] = useState<string>("ALL");
   const [selectedSdg, setSelectedSdg] = useState<string>("ALL");
@@ -78,8 +91,17 @@ export default function App() {
   const [onlyTransport, setOnlyTransport] = useState<boolean>(false);
   const [onlyReadyToApply, setOnlyReadyToApply] = useState<boolean>(false);
   const [sortBy, setSortBy] = useState<string>("FEE_ASC");
+  const [expandedCards, setExpandedCards] = useState<Record<string, boolean>>({});
 
-  // Helper: Reset all filters
+  // synchronize slider state with dynamic dataset bounds
+  useEffect(() => {
+    if (maxFeeDetected > 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setMaxFee(maxFeeDetected);
+    }
+  }, [maxFeeDetected]);
+
+  // helper: reset all filters
   const resetFilters = () => {
     setSearchQuery("");
     setSelectedCountry("ALL");
@@ -93,13 +115,17 @@ export default function App() {
     setSortBy("FEE_ASC");
   };
 
-  // Phase 4: Single-pass composite predicate filtering + comparator sorting
+  const toggleCardExpand = (id: string) => {
+    setExpandedCards((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  // phase 4: single-pass composite predicate filtering + comparator sorting
   const filteredProjects = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
 
     return allProjects
       .filter((project) => {
-        // 1. Text Search (safe against null/numbers)
+        // 1. Text Search (safe against null/numbers via String coercion)
         if (q) {
           const title = String(project.PROJECT ?? "").toLowerCase();
           const provider = String(project.PROVIDER ?? "").toLowerCase();
@@ -136,8 +162,9 @@ export default function App() {
         }
 
         // 5. Max Fee Filter
-        if (project.FEE_NUMERIC !== null && project.FEE_NUMERIC !== undefined) {
-          if (project.FEE_NUMERIC > maxFee) return false;
+        const fee = getProjectFee(project);
+        if (fee !== null && fee > maxFee) {
+          return false;
         }
 
         // 6. Accommodation Toggle
@@ -198,13 +225,13 @@ export default function App() {
       .sort((a, b) => {
         switch (sortBy) {
           case "FEE_ASC":
-            return (a.FEE_NUMERIC ?? 0) - (b.FEE_NUMERIC ?? 0);
+            return (getProjectFee(a) ?? Number.POSITIVE_INFINITY) - (getProjectFee(b) ?? Number.POSITIVE_INFINITY);
           case "FEE_DESC":
-            return (b.FEE_NUMERIC ?? 0) - (a.FEE_NUMERIC ?? 0);
+            return (getProjectFee(b) ?? -1) - (getProjectFee(a) ?? -1);
           case "DURATION_ASC":
-            return (a.DURATION_WEEKS ?? 0) - (b.DURATION_WEEKS ?? 0);
+            return (a.DURATION_WEEKS ?? Number.POSITIVE_INFINITY) - (b.DURATION_WEEKS ?? Number.POSITIVE_INFINITY);
           case "DURATION_DESC":
-            return (b.DURATION_WEEKS ?? 0) - (a.DURATION_WEEKS ?? 0);
+            return (b.DURATION_WEEKS ?? -1) - (a.DURATION_WEEKS ?? -1);
           case "NAME_ASC":
             return String(a.PROJECT ?? "").localeCompare(String(b.PROJECT ?? ""));
           case "COUNTRY_ASC":
@@ -238,6 +265,13 @@ export default function App() {
     (onlyTransport ? 1 : 0) +
     (onlyReadyToApply ? 1 : 0);
 
+  const logisticsToggles = [
+    { label: "🏠 Housing Covered", checked: onlyAccommodation, onChange: setOnlyAccommodation },
+    { label: "🍽️ Meals Provided", checked: onlyMeals, onChange: setOnlyMeals },
+    { label: "🚌 Transport Included", checked: onlyTransport, onChange: setOnlyTransport },
+    { label: "⚡ Direct Apply Only", checked: onlyReadyToApply, onChange: setOnlyReadyToApply },
+  ];
+
   return (
     <div style={{ maxWidth: "1350px", margin: "0 auto", padding: "2rem", fontFamily: "system-ui, -apple-system, sans-serif", color: "#0f172a", backgroundColor: "#f8fafc", minHeight: "100vh" }}>
       {/* Title Header */}
@@ -251,7 +285,7 @@ export default function App() {
               Explore and filter verified volunteer projects across all bilateral LC partnerships
             </p>
           </div>
-          <div style={{ fontSize: "0.95rem", fontWeight: 600, color: "#334155", background: "#ffffff", padding: "0.5rem 1rem", borderRadius: "8px", border: "1px solid #e2e8f0", boxShadow: "0 1px 2px rgba(0,0,0,0.05)" }}>
+          <div style={{ fontSize: "0.95rem", fontWeight: 600, color: "#334155", background: "#ffffff", padding: "0.5rem 1rem", borderRadius: "8px", border: "1px solid #e2e8f0", boxShadow: "0 1px 2px rgba(0,0,0,0.05)", fontVariantNumeric: "tabular-nums" }}>
             Showing <strong>{filteredProjects.length}</strong> of {allProjects.length} projects
           </div>
         </div>
@@ -262,13 +296,26 @@ export default function App() {
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "1rem", marginBottom: "1.25rem" }}>
             <div>
               <label style={{ display: "block", fontSize: "0.75rem", fontWeight: 700, textTransform: "uppercase", color: "#64748b", marginBottom: "0.35rem" }}>Search Query</label>
-              <input
-                type="text"
-                placeholder="Title, skills, provider..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                style={{ width: "100%", boxSizing: "border-box", padding: "0.6rem 0.8rem", borderRadius: "8px", border: "1px solid #cbd5e1", fontSize: "0.9rem", outline: "none" }}
-              />
+              <div style={{ position: "relative" }}>
+                <input
+                  type="text"
+                  placeholder="Title, skills, provider..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  style={{ width: "100%", boxSizing: "border-box", padding: "0.6rem 2rem 0.6rem 0.8rem", borderRadius: "8px", border: "1px solid #cbd5e1", fontSize: "0.9rem", outline: "none" }}
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery("")}
+                    aria-label="Clear search query"
+                    title="Clear search"
+                    style={{ position: "absolute", right: "0.45rem", top: "50%", transform: "translateY(-50%)", background: "transparent", border: "none", color: "#94a3b8", cursor: "pointer", fontSize: "1.05rem", lineHeight: 1, padding: "0.2rem" }}
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
             </div>
 
             <div>
@@ -276,7 +323,7 @@ export default function App() {
               <select
                 value={selectedCountry}
                 onChange={(e) => setSelectedCountry(e.target.value)}
-                style={{ width: "100%", boxSizing: "border-box", padding: "0.6rem 0.8rem", borderRadius: "8px", border: "1px solid #cbd5e1", fontSize: "0.9rem", background: "#fff" }}
+                style={{ width: "100%", boxSizing: "border-box", padding: "0.6rem 0.8rem", borderRadius: "8px", border: "1px solid #cbd5e1", fontSize: "0.9rem", background: "#fff", cursor: "pointer" }}
               >
                 <option value="ALL">All Partners ({countries.length})</option>
                 {countries.map((c) => (
@@ -290,7 +337,7 @@ export default function App() {
               <select
                 value={selectedSdg}
                 onChange={(e) => setSelectedSdg(e.target.value)}
-                style={{ width: "100%", boxSizing: "border-box", padding: "0.6rem 0.8rem", borderRadius: "8px", border: "1px solid #cbd5e1", fontSize: "0.9rem", background: "#fff" }}
+                style={{ width: "100%", boxSizing: "border-box", padding: "0.6rem 0.8rem", borderRadius: "8px", border: "1px solid #cbd5e1", fontSize: "0.9rem", background: "#fff", cursor: "pointer" }}
               >
                 <option value="ALL">All SDGs ({sdgs.length})</option>
                 {sdgs.map((s) => (
@@ -306,7 +353,7 @@ export default function App() {
               <select
                 value={selectedDuration}
                 onChange={(e) => setSelectedDuration(e.target.value)}
-                style={{ width: "100%", boxSizing: "border-box", padding: "0.6rem 0.8rem", borderRadius: "8px", border: "1px solid #cbd5e1", fontSize: "0.9rem", background: "#fff" }}
+                style={{ width: "100%", boxSizing: "border-box", padding: "0.6rem 0.8rem", borderRadius: "8px", border: "1px solid #cbd5e1", fontSize: "0.9rem", background: "#fff", cursor: "pointer" }}
               >
                 <option value="ALL">Any Length</option>
                 {durations.map((d) => (
@@ -320,7 +367,7 @@ export default function App() {
               <select
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value)}
-                style={{ width: "100%", boxSizing: "border-box", padding: "0.6rem 0.8rem", borderRadius: "8px", border: "1px solid #cbd5e1", fontSize: "0.9rem", background: "#fff" }}
+                style={{ width: "100%", boxSizing: "border-box", padding: "0.6rem 0.8rem", borderRadius: "8px", border: "1px solid #cbd5e1", fontSize: "0.9rem", background: "#fff", cursor: "pointer" }}
               >
                 <option value="FEE_ASC">Price: Low to High</option>
                 <option value="FEE_DESC">Price: High to Low</option>
@@ -332,13 +379,15 @@ export default function App() {
             </div>
           </div>
 
-          {/* Row 2: Budget Range Slider + Logistics Toggles + Reset Button */}
-          <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: "1.5rem", borderTop: "1px solid #f1f5f9", paddingTop: "1.25rem" }}>
-            {/* Fee Range Slider */}
-            <div style={{ minWidth: "260px", flex: "1 1 260px" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem", fontWeight: 600, marginBottom: "0.3rem" }}>
+          {/* Row 2: Budget Range Slider + Logistics Toggles + Reset Button (Fixed geometry — 0 layout shift) */}
+          <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "1.5rem", borderTop: "1px solid #f1f5f9", paddingTop: "1.25rem" }}>
+            {/* Fee Range Slider: fixed 280px basis so its track never shrinks or moves while dragging */}
+            <div style={{ width: "280px", flex: "0 0 280px", maxWidth: "100%" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "0.85rem", fontWeight: 600, marginBottom: "0.35rem" }}>
                 <span>Max Fee Budget:</span>
-                <span style={{ color: "#0284c7" }}>≤ {maxFee} EUR</span>
+                <span style={{ color: "#0284c7", background: "#e0f2fe", padding: "0.15rem 0.5rem", borderRadius: "6px", fontVariantNumeric: "tabular-nums", minWidth: "82px", textAlign: "right" }}>
+                  ≤ {maxFee} EUR
+                </span>
               </div>
               <input
                 type="range"
@@ -347,71 +396,69 @@ export default function App() {
                 step="5"
                 value={maxFee}
                 onChange={(e) => setMaxFee(Number(e.target.value))}
-                style={{ width: "100%", accentColor: "#0284c7" }}
+                style={{ width: "100%", accentColor: "#0284c7", cursor: "pointer", display: "block" }}
               />
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.7rem", color: "#94a3b8", marginTop: "0.2rem", fontVariantNumeric: "tabular-nums" }}>
+                <span>0 EUR</span>
+                <span>{maxFeeDetected} EUR</span>
+              </div>
             </div>
 
-            {/* Logistics Checkboxes */}
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "1.25rem", alignItems: "center" }}>
-              <label style={{ display: "flex", alignItems: "center", gap: "0.45rem", fontSize: "0.875rem", fontWeight: 600, cursor: "pointer" }}>
-                <input
-                  type="checkbox"
-                  checked={onlyAccommodation}
-                  onChange={(e) => setOnlyAccommodation(e.target.checked)}
-                  style={{ accentColor: "#0284c7" }}
-                />
-                🏠 Housing Covered
-              </label>
-
-              <label style={{ display: "flex", alignItems: "center", gap: "0.45rem", fontSize: "0.875rem", fontWeight: 600, cursor: "pointer" }}>
-                <input
-                  type="checkbox"
-                  checked={onlyMeals}
-                  onChange={(e) => setOnlyMeals(e.target.checked)}
-                  style={{ accentColor: "#0284c7" }}
-                />
-                🍽️ Meals Provided
-              </label>
-
-              <label style={{ display: "flex", alignItems: "center", gap: "0.45rem", fontSize: "0.875rem", fontWeight: 600, cursor: "pointer" }}>
-                <input
-                  type="checkbox"
-                  checked={onlyTransport}
-                  onChange={(e) => setOnlyTransport(e.target.checked)}
-                  style={{ accentColor: "#0284c7" }}
-                />
-                🚌 Transport Included
-              </label>
-
-              <label style={{ display: "flex", alignItems: "center", gap: "0.45rem", fontSize: "0.875rem", fontWeight: 600, cursor: "pointer" }}>
-                <input
-                  type="checkbox"
-                  checked={onlyReadyToApply}
-                  onChange={(e) => setOnlyReadyToApply(e.target.checked)}
-                  style={{ accentColor: "#0284c7" }}
-                />
-                ⚡ Direct Apply Only
-              </label>
+            {/* Logistics Pill Checkboxes: anchored left so they never jump when Reset state changes */}
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "0.65rem", alignItems: "center", flex: "1 1 360px" }}>
+              {logisticsToggles.map(({ label, checked, onChange }) => (
+                <label
+                  key={label}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "0.45rem",
+                    fontSize: "0.85rem",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    userSelect: "none",
+                    padding: "0.45rem 0.8rem",
+                    borderRadius: "8px",
+                    border: checked ? "1px solid #0284c7" : "1px solid #e2e8f0",
+                    background: checked ? "#e0f2fe" : "#f8fafc",
+                    color: checked ? "#0369a1" : "#334155",
+                    transition: "background-color 0.15s ease, border-color 0.15s ease",
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={(e) => onChange(e.target.checked)}
+                    style={{ accentColor: "#0284c7", cursor: "pointer", margin: 0 }}
+                  />
+                  {label}
+                </label>
+              ))}
             </div>
 
-            {/* Clear All Filters */}
-            {activeFilterCount > 0 && (
+            {/* Clear All Filters: always mounted with fixed minWidth so activating filters causes zero layout shift */}
+            <div style={{ marginLeft: "auto", flex: "0 0 auto" }}>
               <button
+                type="button"
                 onClick={resetFilters}
+                disabled={activeFilterCount === 0}
                 style={{
-                  background: "#f1f5f9",
-                  border: "1px solid #cbd5e1",
+                  minWidth: "160px",
+                  background: activeFilterCount > 0 ? "#fef2f2" : "#f8fafc",
+                  border: activeFilterCount > 0 ? "1px solid #fecaca" : "1px solid #e2e8f0",
                   borderRadius: "8px",
                   padding: "0.5rem 1rem",
                   fontSize: "0.85rem",
                   fontWeight: 700,
-                  color: "#dc2626",
-                  cursor: "pointer",
+                  color: activeFilterCount > 0 ? "#dc2626" : "#94a3b8",
+                  cursor: activeFilterCount > 0 ? "pointer" : "default",
+                  fontVariantNumeric: "tabular-nums",
+                  transition: "background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease",
                 }}
               >
                 Reset Filters ({activeFilterCount})
               </button>
-            )}
+            </div>
           </div>
         </section>
       </header>
@@ -424,6 +471,7 @@ export default function App() {
             Try expanding your fee budget or unchecking logistics constraints
           </p>
           <button
+            type="button"
             onClick={resetFilters}
             style={{ marginTop: "1rem", background: "#0284c7", color: "#fff", border: "none", padding: "0.6rem 1.25rem", borderRadius: "8px", fontWeight: 600, cursor: "pointer" }}
           >
@@ -432,98 +480,218 @@ export default function App() {
         </div>
       ) : (
         <main style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(360px, 1fr))", gap: "1.5rem" }}>
-          {filteredProjects.map((p, idx) => (
-            <article
-              key={p.ID || idx}
-              style={{
-                background: "#ffffff",
-                borderRadius: "14px",
-                border: "1px solid #e2e8f0",
-                padding: "1.5rem",
-                boxShadow: "0 2px 4px rgba(0,0,0,0.03)",
-                display: "flex",
-                flexDirection: "column",
-                justifyContent: "space-between",
-              }}
-            >
-              <div>
-                {/* Meta Badges */}
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.5rem", flexWrap: "wrap", marginBottom: "0.85rem" }}>
-                  <span style={{ background: "#e0f2fe", color: "#0369a1", fontSize: "0.75rem", fontWeight: 800, padding: "0.3rem 0.65rem", borderRadius: "20px" }}>
-                    {p.COUNTRY || "Partner LC"}
-                  </span>
-                  {p.SDG && (
-                    <span style={{ background: "#dcfce7", color: "#15803d", fontSize: "0.75rem", fontWeight: 800, padding: "0.3rem 0.65rem", borderRadius: "20px" }}>
-                      SDG #{p.SDG} {SDG_LABELS[p.SDG] ? `• ${SDG_LABELS[p.SDG].split(" ")[0]}` : ""}
-                    </span>
+          {filteredProjects.map((p, idx) => {
+            const cardId = String(p.ID || idx);
+            const isExpanded = Boolean(expandedCards[cardId]);
+            const resolvedFee = getProjectFee(p);
+            const timelineFormatted = formatTimeline(p.TIMELINE);
+            const requirementsStr = String(p.REQUIREMENTS ?? "").trim();
+            const extraInfoStr = String(p["EXTRA INFO"] ?? "").trim();
+            const transportStr = String(p.TRANSPORTATION ?? "").trim();
+            const jobDescStr = String(p["JOB DESCRIPTION"] ?? "").trim();
+            const hasExtraDetails =
+              jobDescStr.length > 140 ||
+              Boolean(requirementsStr) ||
+              Boolean(timelineFormatted) ||
+              Boolean(extraInfoStr) ||
+              (Boolean(transportStr) && transportStr.toLowerCase() !== "no");
+
+            return (
+              <article
+                key={cardId}
+                style={{
+                  background: "#ffffff",
+                  borderRadius: "14px",
+                  border: "1px solid #e2e8f0",
+                  padding: "1.5rem",
+                  boxShadow: "0 2px 4px rgba(0,0,0,0.03)",
+                  display: "flex",
+                  flexDirection: "column",
+                  justifyContent: "space-between",
+                }}
+              >
+                <div>
+                  {/* Meta Badges (clickable to quick-filter by Country or SDG) */}
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.5rem", flexWrap: "wrap", marginBottom: "0.85rem" }}>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setSelectedCountry((prev) =>
+                          prev === p.COUNTRY ? "ALL" : (p.COUNTRY || "ALL")
+                        )
+                      }
+                      title={
+                        selectedCountry === p.COUNTRY
+                          ? "Click to show all countries"
+                          : `Filter by ${p.COUNTRY}`
+                      }
+                      style={{
+                        background: selectedCountry === p.COUNTRY ? "#0284c7" : "#e0f2fe",
+                        color: selectedCountry === p.COUNTRY ? "#ffffff" : "#0369a1",
+                        fontSize: "0.75rem",
+                        fontWeight: 800,
+                        padding: "0.3rem 0.65rem",
+                        borderRadius: "20px",
+                        border: "none",
+                        cursor: "pointer",
+                      }}
+                    >
+                      {p.COUNTRY || "Partner LC"}
+                    </button>
+                    {p.SDG && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setSelectedSdg((prev) =>
+                            prev === String(p.SDG) ? "ALL" : String(p.SDG)
+                          )
+                        }
+                        title={
+                          selectedSdg === String(p.SDG)
+                            ? "Click to show all SDGs"
+                            : `Filter by SDG #${p.SDG}`
+                        }
+                        style={{
+                          background: selectedSdg === String(p.SDG) ? "#15803d" : "#dcfce7",
+                          color: selectedSdg === String(p.SDG) ? "#ffffff" : "#15803d",
+                          fontSize: "0.75rem",
+                          fontWeight: 800,
+                          padding: "0.3rem 0.65rem",
+                          borderRadius: "20px",
+                          border: "none",
+                          cursor: "pointer",
+                        }}
+                      >
+                        SDG #{p.SDG} {SDG_LABELS[p.SDG] ? `• ${SDG_LABELS[p.SDG].split(" ")[0]}` : ""}
+                      </button>
+                    )}
+                  </div>
+
+                  <h2 style={{ fontSize: "1.25rem", fontWeight: 700, margin: "0 0 0.35rem 0", color: "#0f172a" }}>
+                    {p.PROJECT || "Global Volunteer Opportunity"}
+                  </h2>
+
+                  {p.PROVIDER && (
+                    <p style={{ fontSize: "0.85rem", color: "#64748b", margin: "0 0 0.75rem 0", fontWeight: 500 }}>
+                      📍 {String(p.PROVIDER)}
+                    </p>
                   )}
-                </div>
 
-                <h2 style={{ fontSize: "1.25rem", fontWeight: 700, margin: "0 0 0.35rem 0", color: "#0f172a" }}>
-                  {p.PROJECT || "Global Volunteer Opportunity"}
-                </h2>
+                  {jobDescStr && (
+                    <p
+                      style={{
+                        fontSize: "0.85rem",
+                        color: "#475569",
+                        lineHeight: 1.55,
+                        margin: "0 0 0.75rem 0",
+                        ...(isExpanded
+                          ? { whiteSpace: "pre-line" }
+                          : {
+                              display: "-webkit-box",
+                              WebkitLineClamp: 3,
+                              WebkitBoxOrient: "vertical",
+                              overflow: "hidden",
+                            }),
+                      }}
+                    >
+                      {jobDescStr}
+                    </p>
+                  )}
 
-                {p.PROVIDER && (
-                  <p style={{ fontSize: "0.85rem", color: "#64748b", margin: "0 0 0.75rem 0", fontWeight: 500 }}>
-                    📍 {p.PROVIDER}
-                  </p>
-                )}
-
-                {p["JOB DESCRIPTION"] && (
-                  <p style={{ fontSize: "0.85rem", color: "#475569", lineHeight: 1.5, margin: "0 0 1rem 0", display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
-                    {p["JOB DESCRIPTION"]}
-                  </p>
-                )}
-
-                {/* Relational Attributes Badge Strip */}
-                <div style={{ display: "flex", flexWrap: "wrap", gap: "0.45rem", margin: "1rem 0", fontSize: "0.78rem" }}>
-                  <span style={{ background: "#f1f5f9", padding: "0.35rem 0.6rem", borderRadius: "6px", fontWeight: 600 }}>
-                    ⏱ {p.DURATION || (p.DURATION_WEEKS ? `${p.DURATION_WEEKS} weeks` : "6 weeks")}
-                  </span>
-                  <span style={{ background: "#f1f5f9", padding: "0.35rem 0.6rem", borderRadius: "6px", fontWeight: 600 }}>
-                    💶 {p.FEE_NUMERIC !== null && p.FEE_NUMERIC !== undefined ? `${p.FEE_NUMERIC} EUR` : (p.FEE || "Inquire with LC")}
-                  </span>
-                  <span style={{ background: p.ACCOMMODATION_BOOL ? "#f0fdf4" : "#fef2f2", color: p.ACCOMMODATION_BOOL ? "#166534" : "#991b1b", padding: "0.35rem 0.6rem", borderRadius: "6px", fontWeight: 600 }}>
-                    🏠 {p.ACCOMMODATION_BOOL ? "Housing: Yes" : "Housing: No/Unconfirmed"}
-                  </span>
-                  {p.MEALS && (
+                  {/* Relational Attributes Badge Strip */}
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "0.45rem", margin: "0.85rem 0", fontSize: "0.78rem" }}>
                     <span style={{ background: "#f1f5f9", padding: "0.35rem 0.6rem", borderRadius: "6px", fontWeight: 600 }}>
-                      🍽️ {String(p.MEALS)}
+                      ⏱ {p.DURATION ? String(p.DURATION) : p.DURATION_WEEKS ? `${p.DURATION_WEEKS} weeks` : "6 weeks"}
                     </span>
+                    <span style={{ background: "#f1f5f9", padding: "0.35rem 0.6rem", borderRadius: "6px", fontWeight: 600 }}>
+                      💶 {resolvedFee !== null ? `${resolvedFee} EUR` : p.FEE ? String(p.FEE) : "Inquire with LC"}
+                    </span>
+                    <span style={{ background: p.ACCOMMODATION_BOOL ? "#f0fdf4" : "#fef2f2", color: p.ACCOMMODATION_BOOL ? "#166534" : "#991b1b", padding: "0.35rem 0.6rem", borderRadius: "6px", fontWeight: 600 }}>
+                      🏠 {p.ACCOMMODATION_BOOL ? "Housing: Yes" : "Housing: No/Unconfirmed"}
+                    </span>
+                    {p.MEALS !== null && p.MEALS !== undefined && String(p.MEALS).trim() !== "" && (
+                      <span style={{ background: "#f1f5f9", padding: "0.35rem 0.6rem", borderRadius: "6px", fontWeight: 600 }}>
+                        🍽️ {String(p.MEALS)}
+                      </span>
+                    )}
+                    {timelineFormatted && (
+                      <span style={{ background: "#f1f5f9", padding: "0.35rem 0.6rem", borderRadius: "6px", fontWeight: 600 }}>
+                        📅 {timelineFormatted}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Expandable Additional Details (Requirements, Transport, Extra Info) */}
+                  {isExpanded && (
+                    <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "8px", padding: "0.75rem", marginTop: "0.5rem", fontSize: "0.8rem", color: "#334155", display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+                      {requirementsStr && (
+                        <div>
+                          <strong>Requirements:</strong> {requirementsStr}
+                        </div>
+                      )}
+                      {transportStr && (
+                        <div>
+                          <strong>Transportation:</strong> {transportStr}
+                        </div>
+                      )}
+                      {extraInfoStr && (
+                        <div>
+                          <strong>Extra Info:</strong> {extraInfoStr}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {hasExtraDetails && (
+                    <button
+                      type="button"
+                      onClick={() => toggleCardExpand(cardId)}
+                      style={{
+                        background: "transparent",
+                        border: "none",
+                        padding: "0.2rem 0",
+                        fontSize: "0.8rem",
+                        fontWeight: 600,
+                        color: "#0284c7",
+                        cursor: "pointer",
+                      }}
+                    >
+                      {isExpanded ? "Show less ▴" : "More project details ▾"}
+                    </button>
                   )}
                 </div>
-              </div>
 
-              {/* Action Buttons */}
-              <div style={{ borderTop: "1px solid #f1f5f9", paddingTop: "1rem", marginTop: "0.75rem", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                {p["OPPORTUNITY LINK"] ? (
-                  <a
-                    href={p["OPPORTUNITY LINK"]}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{ background: "#0284c7", color: "#ffffff", padding: "0.55rem 1rem", borderRadius: "8px", textDecoration: "none", fontSize: "0.85rem", fontWeight: 700 }}
-                  >
-                    Apply on AIESEC →
-                  </a>
-                ) : (
-                  <span style={{ fontSize: "0.8rem", color: "#d97706", fontStyle: "italic", fontWeight: 600 }}>
-                    Draft — Link pending
-                  </span>
-                )}
+                {/* Action Buttons */}
+                <div style={{ borderTop: "1px solid #f1f5f9", paddingTop: "1rem", marginTop: "0.75rem", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  {p["OPPORTUNITY LINK"] ? (
+                    <a
+                      href={p["OPPORTUNITY LINK"]}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ background: "#0284c7", color: "#ffffff", padding: "0.55rem 1rem", borderRadius: "8px", textDecoration: "none", fontSize: "0.85rem", fontWeight: 700 }}
+                    >
+                      Apply on AIESEC →
+                    </a>
+                  ) : (
+                    <span style={{ fontSize: "0.8rem", color: "#d97706", fontStyle: "italic", fontWeight: 600 }}>
+                      Draft — Link pending
+                    </span>
+                  )}
 
-                {p.BOOKLET && (
-                  <a
-                    href={p.BOOKLET}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{ fontSize: "0.8rem", color: "#64748b", textDecoration: "underline", fontWeight: 600 }}
-                  >
-                    LC Booklet ↗
-                  </a>
-                )}
-              </div>
-            </article>
-          ))}
+                  {p.BOOKLET && (
+                    <a
+                      href={p.BOOKLET}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ fontSize: "0.8rem", color: "#64748b", textDecoration: "underline", fontWeight: 600 }}
+                    >
+                      LC Booklet ↗
+                    </a>
+                  )}
+                </div>
+              </article>
+            );
+          })}
         </main>
       )}
     </div>
