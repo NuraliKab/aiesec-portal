@@ -4,26 +4,28 @@ import re
 import json
 import requests
 import openpyxl
+from datetime import date, datetime
 from urllib.parse import urlparse, parse_qs
 
-
-
+# ==============================================================================
+# PIPELINE DESIGN (Comment-Driven Development Blueprint)
+# ==============================================================================
 # phase 1: download excel sheet file into memory and read it
 # phase 2: make a master list to store projects from all sheets
 # Phase 3: loop through each sheet and 
     # 3a: skip sheets with "CLUSTER" or "LC X" in their name
-    # 3b: scan the rows to find header row ("OPPORTUNITY LINK" and "PROJECT")
+    # 3b: scan rows with whitespace-normalized search to find header row
     # 3c: if there is no header row skip it
     # 3d: loop through data rows
         # - stop if reached "OUR EXPERIENCES" or "CURRENT STATE" section
         # - skip empty rows
-        # - combine the header row to data
+        # - convert datetime/date cells to strings so JSON never crashes
         # - skip closed projects with "no slots now"
-        # - run decoupled helpers (clean google links, fees, booleans, duration, SDG)
+        # - clean google redirect links, fees, duration, and resolve SDGs
         # - keep valid projects (has title OR has link) and tag with country name
     # 3e: add the sheet's projects to the master list
-# phase 4: save the data to frontend/src/data/projects.json
-
+# phase 4: save the data to frontend/src/data/projects.json using default=str
+# ==============================================================================
 
 # ID of the public spreadsheet
 SHEET_ID = "10Fb0P3NT3sjRtycyCM-_85xWVa1oavWTfCVddh-6bwY"
@@ -57,8 +59,27 @@ SDG_MAP = {
 }
 
 
+# ==============================================================================
+# DECOUPLED SANITIZATION HELPERS
+# ==============================================================================
+
+def normalize_text(val):
+    # normalizes newlines, non-breaking spaces (\xa0), tabs, and extra spaces
+    if val is None:
+        return ""
+    return " ".join(str(val).replace("\xa0", " ").split()).strip().upper()
+
+
+def find_field(record, *keywords):
+    # flexible dictionary getter that matches column headers containing any of the keywords
+    for key, val in record.items():
+        if key and any(kw in key for kw in keywords):
+            return val
+    return None
+
+
 def clean_url(raw_url):
-    # unwrap google redirect links and reject non-http text (like "GC Matale.pdfk" or page titles)
+    # unwrap google redirect links and reject plain text that is not a valid URL
     if not raw_url:
         return None
     url_str = str(raw_url).strip()
@@ -66,7 +87,6 @@ def clean_url(raw_url):
         params = parse_qs(urlparse(url_str).query)
         url_str = params.get("q", [url_str])[0]
 
-    # extract first valid http/https URL if embedded in text, otherwise return None
     match = re.search(r"(https?://[^\s)\"'>]+)", url_str)
     return match.group(1) if match else None
 
@@ -93,7 +113,7 @@ def clean_duration(raw_duration, raw_timeline=None):
 
 
 def clean_bool(raw_val):
-    # standardize "Yes", "yEs", "host families", "dorms of the NGO" -> True; "no", "not provided" -> False
+    # standardize "Yes", "host families", "dorms of the NGO" -> True; "no", "not provided" -> False
     if not raw_val:
         return False
     val_str = str(raw_val).strip().upper()
@@ -141,16 +161,18 @@ def main():
         if "CLUSTER" in sheet_name.upper() or "LC X" in sheet_name.upper():
             continue
 
-        # 3b: scan the rows to find header row
+        # 3b: scan rows using normalized whitespace to find header row
         header_row = None
         header_row_index = None
         for row_index, row in enumerate(sheet.iter_rows(values_only=True), start=1):
-            # convert values into string, make uppercase, and strip whitespace
-            row_cleaned = [str(cell).strip().upper() for cell in row if cell is not None]
+            row_normalized = [normalize_text(cell) for cell in row if cell is not None]
 
-            if "OPPORTUNITY LINK" in row_cleaned and "PROJECT" in row_cleaned:
-                # normalize header names so dictionary keys have no trailing spaces
-                header_row = [str(col).strip().upper() if col is not None else None for col in row]
+            # check if row contains both a link column and a project column
+            has_link_col = any("LINK" in c for c in row_normalized)
+            has_proj_col = any("PROJECT" in c for c in row_normalized)
+
+            if has_link_col and has_proj_col:
+                header_row = [normalize_text(col) if col is not None else None for col in row]
                 header_row_index = row_index
                 break
 
@@ -162,31 +184,34 @@ def main():
         projects = []
         for row_offset, row in enumerate(sheet.iter_rows(min_row=header_row_index + 1, values_only=True), start=1):
             # stop if reached "OUR EXPERIENCES" or "CURRENT STATE" section
-            if any(
-                "OUR EXPERIENCES" in str(cell).upper() or "CURRENT STATE" in str(cell).upper()
-                for cell in row if cell is not None
-            ):
+            row_str = " ".join(normalize_text(c) for c in row if c is not None)
+            if "OUR EXPERIENCES" in row_str or "CURRENT STATE" in row_str:
                 break
 
             # skip empty rows
             if not any(row):
                 continue
 
-            # combine the header row to data
+            # combine the header row to data and convert datetime objects to ISO strings
             project = {}
             for col_name, cell_value in zip(header_row, row):
                 if col_name is not None:
+                    if isinstance(cell_value, (date, datetime)):
+                        cell_value = cell_value.isoformat()
                     project[col_name] = cell_value
 
             # skip closed projects marked with "no slots now"
-            timeline_str = str(project.get("TIMELINE") or "").lower()
-            extra_info_str = str(project.get("EXTRA INFO") or "").lower()
+            timeline_str = str(find_field(project, "TIMELINE") or "").lower()
+            extra_info_str = str(find_field(project, "EXTRA INFO") or "").lower()
             if "no slots now" in timeline_str or "no slots now" in extra_info_str:
                 continue
 
-            # clean link and title
-            cleaned_link = clean_url(project.get("OPPORTUNITY LINK"))
-            raw_title = str(project.get("PROJECT") or "").strip()
+            # clean link and title using flexible header matching
+            raw_link_val = find_field(project, "OPPORTUNITY LINK", "LINK")
+            cleaned_link = clean_url(raw_link_val)
+
+            raw_title_val = find_field(project, "PROJECT")
+            raw_title = str(raw_title_val or "").strip()
 
             has_title = raw_title != "" and raw_title.upper() != "NONE"
             has_link = cleaned_link is not None
@@ -195,18 +220,22 @@ def main():
             if has_title or has_link:
                 final_title = raw_title if has_title else "Global Volunteer Opportunity"
 
+                raw_sdg_val = find_field(project, "SDG")
+                raw_fee_val = find_field(project, "FEE", "COST")
+                raw_duration_val = find_field(project, "DURATION")
+                raw_booklet_val = find_field(project, "BOOKLET")
+                raw_accomm_val = find_field(project, "ACCOMMOD", "ACCOMOD")
+
                 # enrich and normalize fields for the React frontend contract
                 project["ID"] = f"{sheet_name}_{header_row_index + row_offset}"
                 project["COUNTRY"] = sheet_name
                 project["PROJECT"] = final_title
                 project["OPPORTUNITY LINK"] = cleaned_link
-                project["BOOKLET"] = clean_url(project.get("BOOKLET"))
-                project["SDG"] = resolve_sdg(project.get("SDG"), final_title)
-                project["FEE_NUMERIC"] = clean_fee(project.get("FEE"))
-                project["DURATION_WEEKS"] = clean_duration(project.get("DURATION"), project.get("TIMELINE"))
-                project["ACCOMMODATION_BOOL"] = clean_bool(
-                    project.get("ACCOMMODATION") or project.get("ACCOMODATION")
-                )
+                project["BOOKLET"] = clean_url(raw_booklet_val)
+                project["SDG"] = resolve_sdg(raw_sdg_val, final_title)
+                project["FEE_NUMERIC"] = clean_fee(raw_fee_val)
+                project["DURATION_WEEKS"] = clean_duration(raw_duration_val, timeline_str)
+                project["ACCOMMODATION_BOOL"] = clean_bool(raw_accomm_val)
 
                 projects.append(project)
 
@@ -217,7 +246,8 @@ def main():
     # --- PHASE 4: save the data to a json file ---
     os.makedirs(os.path.dirname(OUTPUT_PATH), exist_ok=True)
     with open(OUTPUT_PATH, "w", encoding="utf-8") as f:
-        json.dump(all_projects, f, indent=2, ensure_ascii=False)
+        # default=str guarantees datetime/custom objects serialize safely
+        json.dump(all_projects, f, indent=2, ensure_ascii=False, default=str)
 
     print(f"\nDone! Saved {len(all_projects)} total projects to {OUTPUT_PATH}")
 
