@@ -1,13 +1,14 @@
 import io
+import json
 import os
 import re
 import sys
-import json
 import tempfile
-import requests
-import openpyxl
 from datetime import date, datetime, time, timedelta
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import parse_qs, urlparse
+
+import openpyxl
+import requests
 
 # ==============================================================================
 # PIPELINE DESIGN (Comment-Driven Development Blueprint)
@@ -247,9 +248,7 @@ def clean_bool(raw_val):
         return False
     if re.match(r"(?:NO|NOT)\b", val_str):
         return False
-    if any(phrase in val_str for phrase in NEGATIVE_PHRASES):
-        return False
-    return True
+    return not any(phrase in val_str for phrase in NEGATIVE_PHRASES)
 
 
 def resolve_sdg(raw_sdg, project_name):
@@ -327,7 +326,6 @@ def main():
             continue
 
         header_row = None
-        header_row_index = None
         projects = []
 
         # single O(rows x cols) pass: header scan, then data rows until the sentinel
@@ -338,7 +336,6 @@ def main():
             if header_row is None:
                 if is_header_row(row):
                     header_row = [canonical_header(col) for col in row]
-                    header_row_index = row_index
                 continue
 
             # 3d: loop through data rows
