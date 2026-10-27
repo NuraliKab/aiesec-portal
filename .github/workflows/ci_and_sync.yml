@@ -43,7 +43,7 @@ jobs:
         working-directory: ./frontend
         run: |
           npm ci
-          npx tsc --noEmit
+          npx tsc -b
 
       - name: Commit & Push updated JSON if changed
         run: |
