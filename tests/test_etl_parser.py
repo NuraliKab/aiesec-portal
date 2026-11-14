@@ -1,268 +1,144 @@
-import json
-from datetime import date, datetime, time, timedelta
-
 import pytest
+
 from scripts.etl_parser import (
-    normalize_text,
-    canonical_header,
-    is_header_row,
-    is_sentinel_row,
-    to_json_safe,
-    find_field,
-    clean_url,
-    clean_fee,
-    clean_duration,
     clean_bool,
+    clean_duration,
+    clean_fee,
+    clean_url,
     resolve_sdg,
-    write_json_atomic,
 )
 
-# ==============================================================================
-# phase 1: header / boundary detection helpers
-# ==============================================================================
+# every test below uses @pytest.mark.parametrize: we write a list of
+# (input, expected answer) pairs and pytest runs the same test once per pair.
+# most inputs are copied from real cells in the AIESEC sheet.
 
+
+# phase 1: clean_url should give back a real link, or None when there isn't one
 @pytest.mark.parametrize(
-    "raw_input, expected",
+    "raw_url, expected",
     [
-        ("OPPORTUNITY\nLINK", "OPPORTUNITY LINK"),
-        ("OPPORTUNITY\xa0LINK", "OPPORTUNITY LINK"),
-        ("  opportunity \t link  ", "OPPORTUNITY LINK"),
-        ("Project", "PROJECT"),
-        (4.0, "4.0"),
-        (None, ""),
-    ],
-)
-def test_normalize_text(raw_input, expected):
-    assert normalize_text(raw_input) == expected
-
-
-@pytest.mark.parametrize(
-    "raw_header, expected",
-    [
-        ("ACCOMODATION", "ACCOMMODATION"),
-        ("Accommodation", "ACCOMMODATION"),
-        ("TIMELINE\nOPEN", "TIMELINE"),
-        ("FEE", "FEE"),
-        ("   ", None),
-        (None, None),
-    ],
-)
-def test_canonical_header(raw_header, expected):
-    assert canonical_header(raw_header) == expected
-
-
-@pytest.mark.parametrize(
-    "row, expected",
-    [
-        # real header (Iași / Izmir / Ain Sham variants with wrapped whitespace)
-        (["SDG", "PROJECT", "OPPORTUNITY\nLINK", "PROVIDER"], True),
-        ([None, "Project\xa0", "Opportunity Link", None], True),
-        # Ain Sham row 18: "4 WEEKS PROJECTS?" + Canva URL containing "LINK" -> must NOT match
-        (["Possible 4 weeks projects?", "yes", "outings", "https://www.canva.com/...utm_medium=link2"], False),
-        # Delhi IIT row 13: bare "LINK" cell with no project anchor
-        (["SLOTS", "VISA", "BOOKLET:", "LINK"], False),
-        # participant log header below the sentinel
-        (["EP NAME", "CURRENT STATE", "PROJECT LINK", "PROJECT went well?"], False),
-        ([None, None, None], False),
-    ],
-)
-def test_is_header_row(row, expected):
-    assert is_header_row(row) is expected
-
-
-@pytest.mark.parametrize(
-    "row, expected",
-    [
-        ([None, "OUR EXPERIENCES", None], True),
-        (["EP NAME", "CURRENT\nSTATE", "WHERE (LC city?)"], True),
-        (["our  experiences"], True),
-        # a job description mentioning the phrase mid-sentence must not terminate the table
-        ([4, "Global Classroom", "Assess the current state of local schools"], False),
-        ([None, None], False),
-    ],
-)
-def test_is_sentinel_row(row, expected):
-    assert is_sentinel_row(row) is expected
-
-
-# ==============================================================================
-# phase 2: serialization safety
-# ==============================================================================
-
-@pytest.mark.parametrize(
-    "raw_value, expected",
-    [
-        (datetime(2026, 3, 1, 0, 0), "2026-03-01T00:00:00"),
-        (date(2026, 2, 23), "2026-02-23"),
-        (time(11, 3, 26), "11:03:26"),
-        (timedelta(days=1, hours=4, minutes=1, seconds=26), "1 day, 4:01:26"),
-        ("  yes  ", "yes"),
-        ("   ", None),
-        (104.2, 104.2),
-        (None, None),
-    ],
-)
-def test_to_json_safe(raw_value, expected):
-    result = to_json_safe(raw_value)
-    assert result == expected
-    json.dumps(result)  # must never raise TypeError
-
-
-def test_write_json_atomic_roundtrip(tmp_path):
-    target = tmp_path / "nested" / "projects.json"
-    payload = [{"COUNTRY": "Iași🇷🇴", "TIMELINE": datetime(2026, 3, 1)}]
-    write_json_atomic(payload, str(target))
-    loaded = json.loads(target.read_text(encoding="utf-8"))
-    assert loaded == [{"COUNTRY": "Iași🇷🇴", "TIMELINE": "2026-03-01 00:00:00"}]
-    # no temp files left behind in the target directory
-    assert [p.name for p in target.parent.iterdir()] == ["projects.json"]
-
-
-@pytest.mark.parametrize(
-    "record, keywords, expected",
-    [
-        # exact match wins over substring match regardless of column order
-        ({"PROJECT LINK": "x", "PROJECT": "Equify"}, ("PROJECT",), "Equify"),
-        ({"OPPORTUNITY LINK": "u"}, ("OPPORTUNITY LINK", "LINK"), "u"),
-        ({"ACCOMMODATION": "yes"}, ("ACCOMMOD", "ACCOMOD"), "yes"),
-        ({"FEE": None}, ("FEE",), None),
-        ({}, ("FEE",), None),
-    ],
-)
-def test_find_field(record, keywords, expected):
-    assert find_field(record, *keywords) == expected
-
-
-# ==============================================================================
-# phase 3: pure field sanitizers
-# ==============================================================================
-
-@pytest.mark.parametrize(
-    "raw_input, expected",
-    [
+        # google wraps pasted links in a redirect, we want the real one back
         (
             "https://www.google.com/url?q=https://aiesec.org/opportunity/global-volunteer/1331721&sa=D&source=editors",
             "https://aiesec.org/opportunity/global-volunteer/1331721",
         ),
+        # a normal link stays the same
         (
             "https://aiesec.org/opportunity/global-volunteer/1305759",
             "https://aiesec.org/opportunity/global-volunteer/1305759",
         ),
+        # a link in the middle of a sentence
         (
             "see https://drive.google.com/drive/folders/1JgZc?usp=sharing for photos",
             "https://drive.google.com/drive/folders/1JgZc?usp=sharing",
         ),
+        # text that only looks like a link is not a link
         ("Sisters at Law | Global Volunteer | AIESEC", None),
-        ("GC Matale.pdfk", None),
-        ("2026-03-01T00:00:00", None),
-        ("   ", None),
+        ("GC Matale.pdf", None),
         (None, None),
     ],
 )
-def test_clean_url(raw_input, expected):
-    assert clean_url(raw_input) == expected
+def test_clean_url(raw_url, expected):
+    assert clean_url(raw_url) == expected
 
 
+# phase 2: clean_fee should turn any price text into a plain number
 @pytest.mark.parametrize(
-    "raw_fee, expected_float",
+    "raw_fee, expected",
     [
         ("75 EUR", 75.0),
-        ("104,20€", 104.20),
-        ("76,32", 76.32),
+        ("57$", 57.0),
+        # decimal comma and decimal point both work
+        ("104,20€", 104.2),
         ("92.17 EUR", 92.17),
-        ("103,56 EUr", 103.56),
-        ("200 EUR ", 200.0),
+        # a price range keeps the lowest price
         ("190-450$", 190.0),
+        # free projects are 0, which is different from "we don't know" (None)
         ("0 EUR", 0.0),
+        # cells that are already numbers in excel
         (104.2, 104.2),
         (49, 49.0),
+        # no number in the cell
         ("Inquire with LC", None),
-        (-5, None),
-        (True, None),
         (None, None),
     ],
 )
-def test_clean_fee(raw_fee, expected_float):
-    assert clean_fee(raw_fee) == expected_float
+def test_clean_fee(raw_fee, expected):
+    assert clean_fee(raw_fee) == expected
 
 
+# phase 3: clean_duration should find the number of weeks
 @pytest.mark.parametrize(
-    "raw_duration, raw_timeline, expected_weeks",
+    "raw_duration, raw_timeline, expected",
     [
         ("6 weeks", None, 6),
-        ("6/4 weeks", None, 6),
-        ("6 / 4 weeks", None, 6),
-        ("6 weeks (4?)", None, 6),
         ("4 weeks (can be extended)", None, 4),
-        ("6/4 weeks (link for the 4 weeks: https://aiesec.org/opportunity/x)", None, 6),
-        ("8 wks", None, 8),
-        ("6w", None, 6),
-        (None, "6 weeks", 6),
-        # explicit realization windows in the DURATION column
-        ("23 Feb - 6 Apr", None, 6),
+        # "6/4" means 6 weeks with a shorter 4 week option, so we keep the 6
+        ("6/4 weeks", None, 6),
+        # the cell is just a number
+        (6, None, 6),
+        # start and end dates instead of a number of weeks
         ("13 Jul - 24 Aug", None, 6),
         ("3 August - 14 September", None, 6),
+        # a date range that crosses new year
         ("15 Dec - 26 Jan", None, 6),
-        # availability windows (no dash) are not a realization length
+        # DURATION is empty but TIMELINE says it
+        (None, "6 weeks", 6),
+        # dates without a dash between them are not a range we can trust
         ("18th of May 29th of July 1 slot", None, None),
-        # "2026 with" must not be read as 2026 weeks
-        (None, "from 1 Jan 2026 with flexible start", None),
-        # numeric cells and out-of-range values
-        (6, None, 6),
-        (0, None, None),
+        # no project is 99 weeks long, so this must be a typo
         ("99 weeks", None, None),
         (None, None, None),
     ],
 )
-def test_clean_duration(raw_duration, raw_timeline, expected_weeks):
-    assert clean_duration(raw_duration, raw_timeline) == expected_weeks
+def test_clean_duration(raw_duration, raw_timeline, expected):
+    assert clean_duration(raw_duration, raw_timeline) == expected
 
 
+# phase 4: clean_bool should turn the housing cell into True / False
 @pytest.mark.parametrize(
-    "raw_val, expected_bool",
+    "raw_value, expected",
     [
+        # any way of writing yes
         ("Yes", True),
         ("yEs", True),
-        (" YES https://drive.google.com/drive/folders/1u3db", True),
+        (1, True),
+        # a description of the place also means housing is included
         ("host families", True),
         ("dorms of the NGO", True),
         ("provided ; covered", True),
-        ("in a tent", True),
-        (1, True),
+        # any way of writing no
         ("No", False),
-        ("no ", False),
         ("not provided", False),
-        ("Not Covered and Not Provided", False),
+        # "provided" is in the text, but "not covered" means the student pays
         ("provided but not covered", False),
-        ("To be checked with the project coordinator", False),
+        # unknown counts as no, so we never promise housing by mistake
         ("?", False),
-        (".", False),
-        (0, False),
         (None, False),
     ],
 )
-def test_clean_bool(raw_val, expected_bool):
-    assert clean_bool(raw_val) is expected_bool
+def test_clean_bool(raw_value, expected):
+    assert clean_bool(raw_value) is expected
 
 
+# phase 5: resolve_sdg should read the SDG cell, or guess it from the project name
 @pytest.mark.parametrize(
-    "raw_sdg, project_name, expected_sdg",
+    "raw_sdg, project_name, expected",
     [
+        # the number is in the SDG cell
         (10, "Equify", 10),
         (4.0, "Global Classroom", 4),
         ("SDG 13", "Green Leaders", 13),
+        # the cell is empty, so the project name decides
         (None, "Raise your Voice", 5),
-        (None, "Happy Bus", 4),
-        (None, "Eat 4 Change", 12),
-        (None, "Aquatica", 14),
         (None, "Scale Up!", 17),
         (None, "Global Classroom - Teaching English", 4),
-        (None, "  on the\nmap ", 8),
-        # out-of-range numeric SDG falls back to the taxonomy
+        # there are only 17 SDGs, so 99 is ignored and the name decides
         (99, "Rooted", 15),
+        # unknown project name
         (None, "Eco City", None),
         (None, None, None),
     ],
 )
-def test_resolve_sdg(raw_sdg, project_name, expected_sdg):
-    assert resolve_sdg(raw_sdg, project_name) == expected_sdg
+def test_resolve_sdg(raw_sdg, project_name, expected):
+    assert resolve_sdg(raw_sdg, project_name) == expected

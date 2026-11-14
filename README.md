@@ -1,197 +1,122 @@
-# 🌍 AIESEC Global Opportunities Portal
+# AIESEC Global Opportunities Portal
 
-A fast, easy-to-use web portal that turns messy AIESEC Google Sheets (`IR Tool 26.2`) into a clean, searchable website for finding international volunteer projects.
+A small website that lets students search every AIESEC volunteer project in one place, instead of scrolling through a giant Google Sheet.
 
----
+## What This Project Is
 
-## 1. Why This Project Exists (The Problem & Solution)
+AIESEC keeps its volunteer projects in one big Google Sheet with 20+ tabs, one tab per partner city. Every tab is laid out a little differently, the prices and dates are typed by hand, and there is no way to search all cities at once (for example "show me every project under 80 EUR with free housing").
 
-### The Problem
-AIESEC partners manage volunteer projects inside a huge Google Sheets file with **20+ different country tabs**.
-- Each tab is formatted slightly differently.
-- Important info (fees, housing, meals, links, booklets) is buried inside hundreds of rows.
-- Students cannot filter all countries at once (for example: *"Show me all projects under 80 EUR with free housing and SDG #4"*).
+This portal fixes that. A Python script reads all the tabs and turns them into one clean JSON file, and a React website shows that file as cards you can search, filter and sort.
 
-### The Solution
-This project has two main parts:
-1. **Python Data Parser (`scripts/etl_parser.py`):** Downloads the Google Sheet, reads every country tab, cleans messy text (fees, dates, broken links, hidden hyperlinks), and saves all valid projects into one clean file: `frontend/src/data/projects.json`.
-2. **React Website (`frontend/`):** Reads `projects.json` and gives students an instant search and filter page (filter by Country, UN SDG goal, Duration, Max Budget Slider, Housing, Meals, Transport, and Direct Apply link).
-
----
-
-## 2. How It Works (Architecture Overview)
+## How It Works (Architecture)
 
 ```text
-[ Google Sheets (IR Tool 26.2) ]
-               │
-               ▼  (Downloaded as .xlsx)
-[ scripts/etl_parser.py ]  ◄── Tested by [ tests/test_etl_parser.py ]
-               │
-               ▼  (Saves clean data)
-[ frontend/src/data/projects.json ]
-               │
-               ▼  (Checked by [ frontend/src/types/project.ts ])
-[ frontend/src/App.tsx ]   ──► Fast React Website in the Browser
+ Google Sheet (20+ tabs)
+        |
+        |  downloaded as one .xlsx file
+        v
+ scripts/etl_parser.py          <-- checked by tests/test_etl_parser.py
+        |
+        |  cleans every row and saves one list
+        v
+ frontend/src/data/projects.json
+        |
+        |  imported when the website is built
+        v
+ React + TypeScript website     (frontend/src/App.tsx)
 ```
 
-### Why don't we download the Google Sheet every time a user opens the website?
-Downloading and reading a 2 MB Excel file takes several seconds and can be blocked by Google if too many users open the site at the same time.
-Instead:
-- A background robot (**GitHub Actions**) runs the Python parser **automatically every 6 hours**, updates `projects.json`, and rebuilds the website.
-- When a user opens the website, the data is already inside `projects.json`, so the page loads **instantly (0 seconds waiting)**!
+The website never talks to Google. A GitHub Action runs the Python script every 6 hours and commits `projects.json` whenever the sheet has changed, so the page loads instantly and always has recent data.
 
----
+| Part | Built with |
+| --- | --- |
+| Data script | Python, `requests`, `openpyxl` |
+| Tests | `pytest` (47 test cases) |
+| Website | React, TypeScript, Vite |
+| Automation | GitHub Actions |
 
-## 3. Folder & File Structure
+## Key Engineering Challenges Solved
 
-Here is what every important file in the project does:
+- **Messy fees and durations.** People type `75 EUR`, `104,20€`, `6/4 weeks` or `13 Jul - 24 Aug`. Small helper functions turn these into plain numbers (`75.0`, `104.2`, `6`, `6`), so the website can sort by price and filter by length.
+- **Broken and hidden links.** Google wraps pasted links in a redirect (`google.com/url?q=...`), and some cells show a title like `Booklet.pdf` with the real link hidden behind it. The script unwraps the redirect and reads the hidden link from the cell.
+- **Stopping before private rows.** Under each project table the sheet has notes about students who already went abroad. The script stops reading as soon as it reaches that section, so none of it ends up on the website.
+- **Fast filtering in the browser.** All projects are loaded once, and one `useMemo` block filters and sorts them only when a filter changes. There is no server and no loading spinner.
 
-```text
-aiesec-portal/
-├── .github/workflows/
-│   └── ci_and_sync.yml          # Automatic robot (runs tests & updates data every 6 hours)
-├── data/raw/
-│   └── IR Tool 26.2.xlsx        # Local backup copy of the Excel spreadsheet for offline testing
-├── scripts/
-│   └── etl_parser.py            # Python script that downloads & cleans the Google Sheet
-├── tests/
-│   └── test_etl_parser.py       # Automated tests (pytest) to make sure the Python parser works
-├── frontend/                    # The React + TypeScript website
-│   ├── index.html               # Main HTML page (sets browser tab title "AIESEC Portal" & icon)
-│   ├── package.json             # List of JavaScript packages and commands (dev, build, lint)
-│   ├── public/
-│   │   └── favicon.svg          # Logo shown in the browser tab
-│   └── src/
-│       ├── main.tsx             # Starts the React app
-│       ├── App.tsx              # Main website page (search bar, filters, budget slider, cards)
-│       ├── index.css            # Basic page styling (full-width background, reset margins)
-│       ├── types/
-│       │   └── project.ts       # TypeScript rules describing what fields a Project object has
-│       └── data/
-│           └── projects.json    # The clean project list generated by etl_parser.py
-└── README.md                    # This documentation file
-```
+## How to Run Locally
 
----
+You need Python 3.11+ and Node.js 20+.
 
-## 4. Deep Dive: How the Python Parser Works (`scripts/etl_parser.py`)
-
-The parser is written in 4 clear steps (**Phases**):
-
-### Phase 1: Download the Excel File into Memory
-- Connects to Google Sheets using `SHEET_ID` and downloads the workbook as an `.xlsx` file directly into memory (RAM) using `requests` and `openpyxl`.
-- You can also pass a local file path (for example: `python scripts/etl_parser.py "data/raw/IR Tool 26.2.xlsx"`) to run it offline.
-
-### Phase 2: Prepare Master List
-- Creates an empty list `all_projects = []` that will hold projects from all countries.
-
-### Phase 3: Read Each Country Sheet (`3a` to `3e`)
-For every worksheet tab in the Excel file:
-- **3a (Skip non-project tabs):** Skips summary/template tabs that have `"CLUSTER"` or `"LC X"` in their name.
-- **3b (Find the table header row):**
-  - Some tabs have newlines or weird spaces inside headers (like `"OPPORTUNITY\nLINK"`). The helper `normalize_text()` cleans all spaces and newlines first.
-  - Scans rows until it finds the row that has both `"OPPORTUNITY LINK"` and `"PROJECT"`.
-- **3c (Skip empty tabs):** If a tab has no header row, it skips that tab.
-- **3d (Read project rows & clean messy data):**
-  - **Stop at the end of the table:** Stops reading as soon as it sees `"OUR EXPERIENCES"` or `"CURRENT STATE"` (so personal participant logs at the bottom of the sheet are never included).
-  - **Skip closed projects:** Skips rows that say `"no slots now"`.
-  - **Fix dates:** Converts Excel `datetime` objects into text (`"2026-03-01T00:00:00"`) so JSON saving never crashes.
-  - **Recover hidden links:** Sometimes editors paste a link where the cell text says `"Global Classroom Booklet.pdf"` instead of `https://...`. The parser checks both the visible text and the hidden Excel hyperlink (`cell.hyperlink.target`).
-  - **Clean fields using pure helper functions:**
-    - `clean_url()`: Removes Google redirect wrappers (`https://www.google.com/url?q=...`) and keeps only real `http/https` links.
-    - `clean_fee()`: Turns messy price text like `"75 EUR"`, `"104,20€"`, or `"190-450$"` into a clean number (`75.0`, `104.2`, `190.0`) stored in `FEE_NUMERIC`.
-    - `clean_duration()`: Extracts the number of weeks (`6` from `"6 weeks"`, `"6/4 weeks"`, or date ranges like `"13 Jul - 24 Aug"`) stored in `DURATION_WEEKS`.
-    - `clean_bool()`: Turns housing descriptions (`"Yes"`, `"host families"`, `"dorms of the NGO"`) into `True`, and `"No"` / `"not provided"` into `False`, stored in `ACCOMMODATION_BOOL`.
-    - `resolve_sdg()`: Reads the UN SDG number (`1`–`17`). If the cell is blank, it looks up the project title in `SDG_MAP` (for example, `"Global Classroom"` $\rightarrow$ SDG `4`, `"Green Leaders"` $\rightarrow$ SDG `13`).
-- **3e (Add to master list):** Adds all valid projects from the tab into `all_projects`.
-
-### Phase 4: Save Safely to `projects.json`
-- Uses `write_json_atomic()` to write the JSON into a temporary file first and then replace `frontend/src/data/projects.json`.
-- If `0` projects were found (for example, if Google Sheets is down), it refuses to overwrite the existing `projects.json` so the website never goes blank.
-
----
-
-## 5. Deep Dive: How the Frontend Works (`frontend/src/App.tsx`)
-
-The React frontend is also organized into 4 clear steps (**Phases**):
-
-1. **Phase 1 (Load Data):** Loads `projects.json` safely into `allProjects`.
-2. **Phase 2 (Calculate Filter Boundaries):** Scans `allProjects` once to build the dropdown lists (available Countries, SDGs, Durations) and finds the highest project price (`maxFeeDetected`) for the budget slider.
-3. **Phase 3 (Filter & Sort State):** Stores what the user has selected (Search text, Country, SDG, Duration, Max Fee slider, Housing/Meals/Transport/Direct Apply toggles, and Sort order).
-   - Uses `useEffect` to keep the budget slider synced with `maxFeeDetected`.
-4. **Phase 4 (Filter & Sort Projects):** Filters all projects in a single pass and sorts them by price, duration, title, or country.
-   - Uses `getProjectFee(project)` so even if `FEE_NUMERIC` is missing, it can still read a number from `FEE`.
-   - Uses `String(val ?? "")` before calling `.toLowerCase()` so numbers inside text columns (like `MEALS: 1`) never crash the page.
-
-### Usability Features on the Page
-- **No Jumping UI:** The budget slider has a fixed width and the `Reset Filters` button is always in a fixed slot, so nothing jumps or shifts left while you drag the slider.
-- **Clickable Badges on Cards:** Clicking a Country badge or SDG badge on any card filters by that Country or SDG right away.
-- **Expandable Details (`More project details ▾`):** Click to expand any card and read the full job description, requirements, transportation info, and extra notes.
-
----
-
-## 6. How to Run the Project on Your Computer
-
-### Step 1: Run the Python Parser (Update `projects.json`)
-From the root folder (`aiesec-portal/`):
+**1. Set up Python (only the first time)**
 
 ```bash
-# Activate the Python virtual environment
+python3 -m venv .venv
 source .venv/bin/activate
-
-# Download the live Google Sheet and update frontend/src/data/projects.json
-python scripts/etl_parser.py
+pip install -r requirements.txt
 ```
 
-*(Optional: to test with the local backup Excel file without internet, run:)*
-```bash
-python scripts/etl_parser.py "data/raw/IR Tool 26.2.xlsx"
-```
-
-### Step 2: Run the Python Unit Tests
-From the root folder (`aiesec-portal/`):
+**2. Run the script that builds `projects.json`**
 
 ```bash
-PYTHONPATH=. .venv/bin/pytest tests/ -v
+python3 scripts/etl_parser.py
 ```
 
-### Step 3: Start the Website Locally (Development Mode)
-Open a terminal and run:
+No internet? Use the backup copy of the sheet that is saved in the repo:
+
+```bash
+python3 scripts/etl_parser.py "data/raw/IR Tool 26.2.xlsx"
+```
+
+**3. Run the tests**
+
+```bash
+PYTHONPATH=. pytest tests/
+```
+
+**4. Start the website**
 
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
-Then open the link shown in the terminal (usually `http://localhost:5173`) in your browser.
 
-### Step 4: Check TypeScript & Build for Production
-Before committing code, verify there are no errors:
+Then open the link from the terminal (usually http://localhost:5173).
+
+**5. Check the frontend before committing**
 
 ```bash
 cd frontend
-npx tsc --noEmit
-npm run lint
+npx tsc -b
 npm run build
 ```
 
----
+## Project Structure
 
-## 7. How Automatic Updates Work (GitHub Actions)
+```text
+aiesec-portal/
+├── scripts/etl_parser.py          # downloads the sheet and writes projects.json
+├── tests/test_etl_parser.py       # tests for the cleaning functions
+├── requirements.txt               # Python packages
+├── data/raw/                      # backup copy of the sheet for offline runs
+├── .github/workflows/             # runs the tests and the script every 6 hours
+└── frontend/
+    └── src/
+        ├── App.tsx                # the whole page: filters and project cards
+        ├── App.css                # styles for the page
+        ├── types/project.ts       # what one project looks like in TypeScript
+        └── data/projects.json     # made by the Python script, don't edit by hand
+```
 
-The file `.github/workflows/ci_and_sync.yml` runs on GitHub's servers:
-1. **Every 6 hours (`cron: "0 */6 * * *"`):** It runs the tests, runs `python scripts/etl_parser.py`, checks TypeScript, and if the Google Sheet has new changes, it automatically commits the new `frontend/src/data/projects.json` to the repository.
-2. **Whenever you push code to `main`:** It runs all tests and TypeScript checks to make sure nothing is broken.
-3. **Manual button:** On GitHub, you can open the **Actions** tab $\rightarrow$ **ETL Sync & CI Quality Gate** $\rightarrow$ click **Run workflow** to force an update immediately.
+If you want to read the code, [PROJECT_GUIDE.md](PROJECT_GUIDE.md) walks through every file in plain English.
 
----
+## Future Roadmap (v2.0)
 
-## 8. Common Customizations (Quick Guide)
+Version 1 keeps everything in one static `projects.json` file. That is simple and fast, but the data is only as fresh as the last sync, and nothing can be saved (no favourites, no accounts).
 
-- **Change the Browser Tab Logo:**
-  - Put your `.svg` logo at `frontend/public/favicon.svg`, OR
-  - Put a `.png` logo at `frontend/public/logo.png` and update `<link rel="icon" ...>` inside `frontend/index.html`.
-- **Change the Browser Tab Title:**
-  - Edit `<title>AIESEC Portal</title>` inside `frontend/index.html`.
-- **Change the Google Sheet:**
-  - Update `SHEET_ID = "..."` at the top of `scripts/etl_parser.py`.
+The plan for v2.0:
+
+- **FastAPI backend** that serves the projects from an API instead of a file.
+- **PostgreSQL database** with two tables: `partner_lcs` (one row per partner city) and `projects`. One partner city has many projects (a 1-to-many relationship), so each project stores the id of its city.
+- The Python script stays, but it writes to the database instead of to a JSON file.
+
+`docker-compose.yml` already starts a local PostgreSQL for this work. Version 1 does not use it.

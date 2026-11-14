@@ -1,184 +1,442 @@
-.counter {
-  font-size: 16px;
-  padding: 5px 10px;
-  border-radius: 5px;
-  color: var(--accent);
-  background: var(--accent-bg);
-  border: 2px solid transparent;
-  transition: border-color 0.3s;
-  margin-bottom: 24px;
+/* styles for App.tsx, in the same order as the page: header, filters, cards */
 
-  &:hover {
-    border-color: var(--accent-border);
-  }
-  &:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 2px;
-  }
+.page {
+  max-width: 1350px;
+  margin: 0 auto;
+  padding: 2rem;
+  font-family: system-ui, -apple-system, sans-serif;
+  color: #0f172a;
+  background-color: #f8fafc;
+  min-height: 100vh;
 }
 
-.hero {
+/* ---------- header ---------- */
+
+.page-header {
+  margin-bottom: 2rem;
+}
+
+.title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.title {
+  font-size: 2.25rem;
+  font-weight: 800;
+  color: #0284c7;
+  letter-spacing: -0.025em;
+}
+
+.subtitle {
+  color: #64748b;
+  margin-top: 0.4rem;
+  font-size: 1rem;
+}
+
+/* tabular-nums gives every digit the same width, so the box doesn't
+   change size while the number of results changes */
+.result-count {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #334155;
+  background: #ffffff;
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- filter bar ---------- */
+
+.filters {
+  margin-top: 1.5rem;
+  background: #ffffff;
+  padding: 1.5rem;
+  border-radius: 14px;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+}
+
+/* row 1: search box and dropdowns. they wrap to the next line on small screens */
+.filter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.filter-label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: #64748b;
+  margin-bottom: 0.35rem;
+}
+
+.search-box {
   position: relative;
-
-  .base,
-  .framework,
-  .vite {
-    inset-inline: 0;
-    margin: 0 auto;
-  }
-
-  .base {
-    width: 170px;
-    position: relative;
-    z-index: 0;
-  }
-
-  .framework,
-  .vite {
-    position: absolute;
-  }
-
-  .framework {
-    z-index: 1;
-    top: 34px;
-    height: 28px;
-    transform: perspective(2000px) rotateZ(300deg) rotateX(44deg) rotateY(39deg)
-      scale(1.4);
-  }
-
-  .vite {
-    z-index: 0;
-    top: 107px;
-    height: 26px;
-    width: auto;
-    transform: perspective(2000px) rotateZ(300deg) rotateX(40deg) rotateY(39deg)
-      scale(0.8);
-  }
 }
 
-#center {
+.search-input {
+  width: 100%;
+  padding: 0.6rem 2rem 0.6rem 0.8rem;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  font-size: 0.9rem;
+  outline: none;
+}
+
+/* the little x inside the search box */
+.search-clear {
+  position: absolute;
+  right: 0.45rem;
+  top: 50%;
+  transform: translateY(-50%);
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  font-size: 1.05rem;
+  line-height: 1;
+  padding: 0.2rem;
+}
+
+.filter-select {
+  width: 100%;
+  padding: 0.6rem 0.8rem;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  font-size: 0.9rem;
+  background: #fff;
+  cursor: pointer;
+}
+
+/* row 2: price slider, toggles and reset button */
+.filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1.5rem;
+  border-top: 1px solid #f1f5f9;
+  padding-top: 1.25rem;
+}
+
+/* the slider has a fixed width, so it never grows or shrinks while you drag it */
+.fee-slider {
+  width: 280px;
+  flex: 0 0 280px;
+  max-width: 100%;
+}
+
+.fee-slider-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin-bottom: 0.35rem;
+}
+
+/* min-width keeps this box the same size for "5 EUR" and "255 EUR" */
+.fee-value {
+  color: #0284c7;
+  background: #e0f2fe;
+  padding: 0.15rem 0.5rem;
+  border-radius: 6px;
+  font-variant-numeric: tabular-nums;
+  min-width: 82px;
+  text-align: right;
+}
+
+.fee-range {
+  width: 100%;
+  accent-color: #0284c7;
+  cursor: pointer;
+  display: block;
+}
+
+.fee-scale {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.7rem;
+  color: #94a3b8;
+  margin-top: 0.2rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  align-items: center;
+  flex: 1 1 360px;
+}
+
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+  padding: 0.45rem 0.8rem;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #334155;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.toggle.on {
+  border-color: #0284c7;
+  background: #e0f2fe;
+  color: #0369a1;
+}
+
+.toggle input {
+  accent-color: #0284c7;
+  cursor: pointer;
+}
+
+/* margin-left: auto pushes the reset button to the right edge */
+.reset-box {
+  margin-left: auto;
+  flex: 0 0 auto;
+}
+
+/* the button is always on the page (just greyed out when no filter is on)
+   and has a min-width, so the layout stays the same when the number changes */
+.reset-button {
+  min-width: 160px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  padding: 0.5rem 1rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #dc2626;
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.reset-button:disabled {
+  background: #f8fafc;
+  border-color: #e2e8f0;
+  color: #94a3b8;
+  cursor: default;
+}
+
+/* ---------- no results message ---------- */
+
+.empty {
+  text-align: center;
+  padding: 5rem 2rem;
+  background: #ffffff;
+  border-radius: 14px;
+  border: 1px solid #e2e8f0;
+}
+
+.empty h3 {
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.empty p {
+  color: #64748b;
+  margin-top: 0.5rem;
+  font-size: 0.95rem;
+}
+
+.empty button {
+  margin-top: 1rem;
+  background: #0284c7;
+  color: #fff;
+  border: none;
+  padding: 0.6rem 1.25rem;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* ---------- project cards ---------- */
+
+/* as many 360px columns as fit on the screen */
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  gap: 1.5rem;
+}
+
+/* space-between keeps the apply button at the bottom of every card */
+.card {
+  background: #ffffff;
+  border-radius: 14px;
+  border: 1px solid #e2e8f0;
+  padding: 1.5rem;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.03);
   display: flex;
   flex-direction: column;
-  gap: 25px;
-  place-content: center;
-  place-items: center;
-  flex-grow: 1;
-
-  @media (max-width: 1024px) {
-    padding: 32px 20px 24px;
-    gap: 18px;
-  }
+  justify-content: space-between;
 }
 
-#next-steps {
+.card-badges {
   display: flex;
-  border-top: 1px solid var(--border);
-  text-align: left;
-
-  & > div {
-    flex: 1 1 0;
-    padding: 32px;
-    @media (max-width: 1024px) {
-      padding: 24px 20px;
-    }
-  }
-
-  .icon {
-    margin-bottom: 16px;
-    width: 22px;
-    height: 22px;
-  }
-
-  @media (max-width: 1024px) {
-    flex-direction: column;
-    text-align: center;
-  }
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.85rem;
 }
 
-#docs {
-  border-right: 1px solid var(--border);
-
-  @media (max-width: 1024px) {
-    border-right: none;
-    border-bottom: 1px solid var(--border);
-  }
+.badge {
+  font-size: 0.75rem;
+  font-weight: 800;
+  padding: 0.3rem 0.65rem;
+  border-radius: 20px;
+  border: none;
+  cursor: pointer;
 }
 
-#next-steps ul {
-  list-style: none;
-  padding: 0;
+.badge.country {
+  background: #e0f2fe;
+  color: #0369a1;
+}
+
+.badge.country.selected {
+  background: #0284c7;
+  color: #ffffff;
+}
+
+.badge.sdg {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.badge.sdg.selected {
+  background: #15803d;
+  color: #ffffff;
+}
+
+.card-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin-bottom: 0.35rem;
+  color: #0f172a;
+}
+
+.card-provider {
+  font-size: 0.85rem;
+  color: #64748b;
+  margin-bottom: 0.75rem;
+  font-weight: 500;
+}
+
+.card-description {
+  font-size: 0.85rem;
+  color: #475569;
+  line-height: 1.55;
+  margin-bottom: 0.75rem;
+}
+
+/* closed card: show only the first 3 lines of the description */
+.card-description.clamped {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* open card: show everything and keep the line breaks from the sheet */
+.card-description.open {
+  white-space: pre-line;
+}
+
+.card-tags {
   display: flex;
-  gap: 8px;
-  margin: 32px 0 0;
-
-  .logo {
-    height: 18px;
-  }
-
-  a {
-    color: var(--text-h);
-    font-size: 16px;
-    border-radius: 6px;
-    background: var(--social-bg);
-    display: flex;
-    padding: 6px 12px;
-    align-items: center;
-    gap: 8px;
-    text-decoration: none;
-    transition: box-shadow 0.3s;
-
-    &:hover {
-      box-shadow: var(--shadow);
-    }
-    .button-icon {
-      height: 18px;
-      width: 18px;
-    }
-  }
-
-  @media (max-width: 1024px) {
-    margin-top: 20px;
-    flex-wrap: wrap;
-    justify-content: center;
-
-    li {
-      flex: 1 1 calc(50% - 8px);
-    }
-
-    a {
-      width: 100%;
-      justify-content: center;
-      box-sizing: border-box;
-    }
-  }
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin: 0.85rem 0;
+  font-size: 0.78rem;
 }
 
-#spacer {
-  height: 88px;
-  border-top: 1px solid var(--border);
-  @media (max-width: 1024px) {
-    height: 48px;
-  }
+.tag {
+  background: #f1f5f9;
+  padding: 0.35rem 0.6rem;
+  border-radius: 6px;
+  font-weight: 600;
 }
 
-.ticks {
-  position: relative;
-  width: 100%;
+.tag.yes {
+  background: #f0fdf4;
+  color: #166534;
+}
 
-  &::before,
-  &::after {
-    content: '';
-    position: absolute;
-    top: -4.5px;
-    border: 5px solid transparent;
-  }
+.tag.no {
+  background: #fef2f2;
+  color: #991b1b;
+}
 
-  &::before {
-    left: 0;
-    border-left-color: var(--border);
-  }
-  &::after {
-    right: 0;
-    border-right-color: var(--border);
-  }
+.card-details {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 0.75rem;
+  margin-top: 0.5rem;
+  font-size: 0.8rem;
+  color: #334155;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.more-button {
+  background: transparent;
+  border: none;
+  padding: 0.2rem 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #0284c7;
+  cursor: pointer;
+}
+
+.card-actions {
+  border-top: 1px solid #f1f5f9;
+  padding-top: 1rem;
+  margin-top: 0.75rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.apply-button {
+  background: #0284c7;
+  color: #ffffff;
+  padding: 0.55rem 1rem;
+  border-radius: 8px;
+  text-decoration: none;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.draft-note {
+  font-size: 0.8rem;
+  color: #d97706;
+  font-style: italic;
+  font-weight: 600;
+}
+
+.booklet-link {
+  font-size: 0.8rem;
+  color: #64748b;
+  text-decoration: underline;
+  font-weight: 600;
 }

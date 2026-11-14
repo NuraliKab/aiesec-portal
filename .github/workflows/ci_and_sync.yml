@@ -1,21 +1,25 @@
-name: ETL Sync & CI Quality Gate
+name: Test and sync data
 
+# when this runs:
+#   - every time code is pushed to main
+#   - every 6 hours, to pick up changes people made in the Google Sheet
+#   - by hand, from the "Run workflow" button in the Actions tab
 on:
   push:
     branches: [main]
   schedule:
-    # Runs every 6 hours automatically to sync Google Sheets updates
     - cron: "0 */6 * * *"
-  workflow_dispatch: # Allows manual trigger from GitHub UI
+  workflow_dispatch:
 
 jobs:
   test-and-sync:
     runs-on: ubuntu-latest
+    # the job needs write access because the last step pushes a commit
     permissions:
       contents: write
 
     steps:
-      - name: Checkout repository
+      - name: Download the repository
         uses: actions/checkout@v4
 
       - name: Set up Python
@@ -23,29 +27,33 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install Python dependencies
-        run: pip install requests openpyxl pytest ruff
+      - name: Install Python packages
+        run: pip install -r requirements.txt
 
-      - name: Lint and run Pytest on ETL sanitizers
+      # if a test fails the job stops here, so broken code never updates the website data
+      - name: Check code style and run the tests
         run: |
           ruff check scripts/
           PYTHONPATH=. pytest tests/
 
-      - name: Run ETL Parser
+      - name: Run the parser (downloads the sheet and rewrites projects.json)
         run: python scripts/etl_parser.py
 
-      - name: Set up Node.js & Type-Check Frontend
+      - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "20"
 
-      - name: Verify TypeScript Contract
+      # makes sure the new projects.json still fits the Project type in the frontend
+      - name: Type-check the frontend
         working-directory: ./frontend
         run: |
           npm ci
           npx tsc -b
 
-      - name: Commit & Push updated JSON if changed
+      # "git diff --staged --quiet" succeeds when nothing changed, so we only
+      # commit and push when the sheet really has new data
+      - name: Commit projects.json if the data changed
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"

@@ -1,20 +1,25 @@
-// phase 1: define the strict TypeScript contract matching Python ETL output
-// raw spreadsheet cells pass through openpyxl untouched except for:
-//   - strings trimmed (empty -> null), dates/times serialized to ISO strings
-//   - header spelling variants canonicalized ("ACCOMODATION" -> "ACCOMMODATION",
-//     "TIMELINE OPEN" -> "TIMELINE"), so a single key exists per concept
-// any raw cell may therefore be a string, a number (numeric Excel cell), or null
+// one Project = one row of the AIESEC sheet, after scripts/etl_parser.py cleaned it.
+// this interface has to match the objects inside src/data/projects.json
+
+// a raw cell is whatever someone typed into the sheet:
+// text ("75 EUR"), a number (104.2) or nothing (null)
 export type RawCell = string | number | null;
 
 export interface Project {
-  // phase 2: identity fields injected by the ETL (always present)
-  ID: string;
-  COUNTRY: string;
-  PROJECT: string;
-  "OPPORTUNITY LINK": string | null;
-  BOOKLET: string | null;
+  // phase 1: fields made or cleaned by the python script.
+  // these are always there, so the website can filter and sort by them safely
+  ID: string; // sheet name + row number, like "Izmir🇹🇷_12"
+  COUNTRY: string; // name of the sheet tab the project came from
+  PROJECT: string; // project title
+  "OPPORTUNITY LINK": string | null; // apply link without the google redirect
+  BOOKLET: string | null; // link to the info booklet
+  SDG: number | null; // UN goal number, 1 to 17
+  FEE_NUMERIC: number | null; // "104,20€" -> 104.2
+  DURATION_WEEKS: number | null; // "6 weeks" -> 6
+  ACCOMMODATION_BOOL: boolean; // "host families" -> true
 
-  // phase 3: raw spreadsheet columns (optional: not every LC tab has every column)
+  // phase 2: columns copied from the sheet exactly as they were typed.
+  // they are optional (?) because not every sheet has every column
   PROVIDER?: RawCell;
   "JOB DESCRIPTION"?: RawCell;
   ACCOMMODATION?: RawCell;
@@ -27,10 +32,4 @@ export interface Project {
   "EXTRA INFO"?: RawCell;
   REQUIREMENTS?: RawCell;
   TESTIMONIAL?: RawCell;
-
-  // phase 4: normalized primitives injected by Python ETL for fast filtering & sorting
-  SDG: number | null;
-  FEE_NUMERIC: number | null;
-  DURATION_WEEKS: number | null;
-  ACCOMMODATION_BOOL: boolean;
 }
