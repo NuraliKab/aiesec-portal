@@ -22,7 +22,7 @@ import requests
 #     3d: loop through the rows under the header
 #         - stop at "OUR EXPERIENCES" or "CURRENT STATE" (private student notes)
 #         - skip empty rows and closed projects ("no slots now")
-#         - clean the link, fee, duration, housing and SDG
+#         - clean the link, fee, currency, duration, housing and SDG
 #         - keep the row if it has a title or a link
 #     3e: add the sheet's projects to the master list
 # phase 4: save the master list to frontend/src/data/projects.json
@@ -124,6 +124,21 @@ def clean_fee(raw_fee):
 
     # some people type "104,20" with a comma, but python only understands "104.20"
     return round(float(match.group(1).replace(",", ".")), 2)
+
+
+def clean_currency(raw_fee):
+    # "57$" -> "USD", "75 EUR" -> "EUR", 104.2 -> "EUR", "no" -> None
+    # a cell without a fee has no currency either
+    if clean_fee(raw_fee) is None:
+        return None
+
+    # a few tabs give their fee in dollars, and they always mark it with "$" or "USD"
+    text = str(raw_fee).upper()
+    if "$" in text or "USD" in text:
+        return "USD"
+
+    # everything else is euros, also when only the number is written
+    return "EUR"
 
 
 def weeks_from_text(text):
@@ -340,6 +355,7 @@ def main():
             project["BOOKLET"] = clean_url(project.get("BOOKLET"))
             project["SDG"] = resolve_sdg(project.get("SDG"), title)
             project["FEE_NUMERIC"] = clean_fee(project.get("FEE"))
+            project["FEE_CURRENCY"] = clean_currency(project.get("FEE"))
             project["DURATION_WEEKS"] = clean_duration(project.get("DURATION"), project.get("TIMELINE"))
             project["ACCOMMODATION_BOOL"] = clean_bool(project.get("ACCOMMODATION"))
 

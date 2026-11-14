@@ -440,13 +440,16 @@ export default function App() {
               durationLabel = `${project.DURATION_WEEKS} weeks`;
             }
 
-            // fee tag: the clean number if we have it, else whatever the sheet says
+            // fee tag: the clean number with its currency ("57 USD") if we have it,
+            // else whatever the sheet says
             let feeLabel = "Inquire with LC";
             if (project.FEE_NUMERIC !== null) {
-              feeLabel = `${project.FEE_NUMERIC} EUR`;
+              feeLabel = `${project.FEE_NUMERIC} ${project.FEE_CURRENCY}`;
             } else if (project.FEE) {
               feeLabel = String(project.FEE);
             }
+            // a dollar note for dollar fees, a euro note for everything else
+            const feeIcon = project.FEE_CURRENCY === "USD" ? "💵" : "💶";
 
             const countrySelected = country === project.COUNTRY;
             const sdgSelected = sdg === String(project.SDG);
@@ -488,7 +491,7 @@ export default function App() {
 
                   <div className="card-tags">
                     <span className="tag">⏱ {durationLabel}</span>
-                    <span className="tag">💶 {feeLabel}</span>
+                    <span className="tag">{feeIcon} {feeLabel}</span>
                     <span className={project.ACCOMMODATION_BOOL ? "tag yes" : "tag no"}>
                       🏠 {project.ACCOMMODATION_BOOL ? "Housing: Yes" : "Housing: No/Unconfirmed"}
                     </span>

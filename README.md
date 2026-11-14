@@ -31,13 +31,13 @@ The website never talks to Google. A GitHub Action runs the Python script every 
 | Part | Built with |
 | --- | --- |
 | Data script | Python, `requests`, `openpyxl` |
-| Tests | `pytest` (47 test cases) |
+| Tests | `pytest` (51 test cases) |
 | Website | React, TypeScript, Vite |
 | Automation | GitHub Actions |
 
 ## Key Engineering Challenges Solved
 
-- **Messy fees and durations.** People type `75 EUR`, `104,20€`, `6/4 weeks` or `13 Jul - 24 Aug`. Small helper functions turn these into plain numbers (`75.0`, `104.2`, `6`, `6`), so the website can sort by price and filter by length.
+- **Messy fees and durations.** People type `75 EUR`, `104,20€`, `57$`, `6/4 weeks` or `13 Jul - 24 Aug`. Small helper functions turn these into plain numbers (`75.0`, `104.2`, `57.0`, `6`, `6`) and remember the currency, so the website can sort by price and filter by length.
 - **Broken and hidden links.** Google wraps pasted links in a redirect (`google.com/url?q=...`), and some cells show a title like `Booklet.pdf` with the real link hidden behind it. The script unwraps the redirect and reads the hidden link from the cell.
 - **Stopping before private rows.** Under each project table the sheet has notes about students who already went abroad. The script stops reading as soon as it reaches that section, so none of it ends up on the website.
 - **Fast filtering in the browser.** All projects are loaded once, and one `useMemo` block filters and sorts them only when a filter changes. There is no server and no loading spinner.
@@ -106,8 +106,6 @@ aiesec-portal/
         ├── types/project.ts       # what one project looks like in TypeScript
         └── data/projects.json     # made by the Python script, don't edit by hand
 ```
-
-If you want to read the code, [PROJECT_GUIDE.md](PROJECT_GUIDE.md) walks through every file in plain English.
 
 ## Future Roadmap (v2.0)
 

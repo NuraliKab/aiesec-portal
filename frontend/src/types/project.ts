@@ -15,6 +15,7 @@ export interface Project {
   BOOKLET: string | null; // link to the info booklet
   SDG: number | null; // UN goal number, 1 to 17
   FEE_NUMERIC: number | null; // "104,20€" -> 104.2
+  FEE_CURRENCY: string | null; // "EUR" or "USD", null when there is no fee
   DURATION_WEEKS: number | null; // "6 weeks" -> 6
   ACCOMMODATION_BOOL: boolean; // "host families" -> true
 

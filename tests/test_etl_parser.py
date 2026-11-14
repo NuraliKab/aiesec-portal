@@ -2,6 +2,7 @@ import pytest
 
 from scripts.etl_parser import (
     clean_bool,
+    clean_currency,
     clean_duration,
     clean_fee,
     clean_url,
@@ -142,3 +143,20 @@ def test_clean_bool(raw_value, expected):
 )
 def test_resolve_sdg(raw_sdg, project_name, expected):
     assert resolve_sdg(raw_sdg, project_name) == expected
+
+
+# phase 6: clean_currency should say if a fee is in euros or dollars
+@pytest.mark.parametrize(
+    "raw_fee, expected",
+    [
+        # a dollar sign means dollars
+        ("57$", "USD"),
+        ("75 EUR", "EUR"),
+        # only a number: the sheet is in euros unless it says something else
+        (104.2, "EUR"),
+        # no fee in the cell means there is no currency to show
+        (None, None),
+    ],
+)
+def test_clean_currency(raw_fee, expected):
+    assert clean_currency(raw_fee) == expected
