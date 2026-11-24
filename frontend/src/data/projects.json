@@ -1594,7 +1594,7 @@
     "PROVIDER": "SONS OF AL-BARQD refugees",
     "JOB DESCRIPTION": null,
     "BOOKLET": "https://www.canva.com/design/DAHHm_u6r-E/9VnXFLDOefGIFaiWScq1Ag/view?utm_content=DAHHm_u6r-E&utm_campaign=designshare&utm_medium=link2&utm_source=uniquelinks&utlId=h51ff317824#4",
-    "ACCOMMODATION": null,
+    "ACCOMMODATION": "yes",
     "MEALS": null,
     "TRANSPORTATION": null,
     "FEE": null,
@@ -1609,7 +1609,7 @@
     "FEE_NUMERIC": null,
     "FEE_CURRENCY": null,
     "DURATION_WEEKS": null,
-    "ACCOMMODATION_BOOL": false
+    "ACCOMMODATION_BOOL": true
   },
   {
     "SDG": 4,
@@ -1618,7 +1618,7 @@
     "PROVIDER": "SONS OF AL-BARQD refugees",
     "JOB DESCRIPTION": null,
     "BOOKLET": "https://www.canva.com/design/DAHHm_u6r-E/9VnXFLDOefGIFaiWScq1Ag/view?utm_content=DAHHm_u6r-E&utm_campaign=designshare&utm_medium=link2&utm_source=uniquelinks&utlId=h51ff317824#4",
-    "ACCOMMODATION": null,
+    "ACCOMMODATION": "yes",
     "MEALS": null,
     "TRANSPORTATION": null,
     "FEE": null,
@@ -1633,7 +1633,7 @@
     "FEE_NUMERIC": null,
     "FEE_CURRENCY": null,
     "DURATION_WEEKS": null,
-    "ACCOMMODATION_BOOL": false
+    "ACCOMMODATION_BOOL": true
   },
   {
     "SDG": 4,
@@ -1642,7 +1642,7 @@
     "PROVIDER": "SONS OF AL-BARQD refugees",
     "JOB DESCRIPTION": null,
     "BOOKLET": "https://www.canva.com/design/DAHHm_u6r-E/9VnXFLDOefGIFaiWScq1Ag/view?utm_content=DAHHm_u6r-E&utm_campaign=designshare&utm_medium=link2&utm_source=uniquelinks&utlId=h51ff317824#4",
-    "ACCOMMODATION": null,
+    "ACCOMMODATION": "yes",
     "MEALS": null,
     "TRANSPORTATION": null,
     "FEE": null,
@@ -1657,7 +1657,7 @@
     "FEE_NUMERIC": null,
     "FEE_CURRENCY": null,
     "DURATION_WEEKS": null,
-    "ACCOMMODATION_BOOL": false
+    "ACCOMMODATION_BOOL": true
   },
   {
     "SDG": 4,
@@ -1666,7 +1666,7 @@
     "PROVIDER": "SONS OF AL-BARQD refugees",
     "JOB DESCRIPTION": null,
     "BOOKLET": "https://www.canva.com/design/DAHHm_u6r-E/9VnXFLDOefGIFaiWScq1Ag/view?utm_content=DAHHm_u6r-E&utm_campaign=designshare&utm_medium=link2&utm_source=uniquelinks&utlId=h51ff317824#4",
-    "ACCOMMODATION": null,
+    "ACCOMMODATION": "yes",
     "MEALS": null,
     "TRANSPORTATION": null,
     "FEE": null,
@@ -1681,7 +1681,7 @@
     "FEE_NUMERIC": null,
     "FEE_CURRENCY": null,
     "DURATION_WEEKS": null,
-    "ACCOMMODATION_BOOL": false
+    "ACCOMMODATION_BOOL": true
   },
   {
     "SDG": 4,
@@ -1690,7 +1690,7 @@
     "PROVIDER": "SONS OF AL-BARQD refugees",
     "JOB DESCRIPTION": null,
     "BOOKLET": "https://www.canva.com/design/DAHHm_u6r-E/9VnXFLDOefGIFaiWScq1Ag/view?utm_content=DAHHm_u6r-E&utm_campaign=designshare&utm_medium=link2&utm_source=uniquelinks&utlId=h51ff317824#4",
-    "ACCOMMODATION": null,
+    "ACCOMMODATION": "yes",
     "MEALS": null,
     "TRANSPORTATION": null,
     "FEE": null,
@@ -1705,7 +1705,7 @@
     "FEE_NUMERIC": null,
     "FEE_CURRENCY": null,
     "DURATION_WEEKS": null,
-    "ACCOMMODATION_BOOL": false
+    "ACCOMMODATION_BOOL": true
   },
   {
     "SDG": 4,
